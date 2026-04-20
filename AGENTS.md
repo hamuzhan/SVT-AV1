@@ -74,8 +74,12 @@ Canonical upstream: **https://gitlab.com/AOMediaCodec/SVT-AV1** (GitHub is a rea
 Build outputs land under `Bin/Release/` and `Bin/Debug/` at the repo root, not
 inside `Build/`. Main binary is `SvtAv1EncApp`.
 
-E2E tests **must** be invoked from the directory containing the test vectors if
-`SVT_AV1_TEST_VECTOR_PATH` is unset; otherwise they fall back to `test/vectors`.
+If `SVT_AV1_TEST_VECTOR_PATH` is set, E2E tests use that absolute path regardless
+of CWD — this is the recommended invocation. If unset, they fall back to a
+CWD-relative path (`../../test/vectors` on POSIX, `../../../../test/vectors` on
+Windows — see `test/e2e_test/VideoSource.cc:183-193`) that only resolves correctly
+when the tests are launched from the build-output directory (typically
+`Bin/Release/`).
 
 ## Architecture
 
@@ -194,9 +198,12 @@ will diverge silently. Cross-arch work can be cross-compiled via
   `Source/API/*.h` requires `SVT_AV1_ENC_ABI_VERSION++`
   (`Source/API/EbSvtAv1Enc.h:32`) and a matching bump of the project version in
   `CMakeLists.txt:19`. CI's Version-consistency job will fail otherwise.
-- **Build flags that change behavior** — `-DMINIMAL_BUILD=1`, `-DLOG_QUIET=1`,
-  and `-DRTC_BUILD=1` gate whole feature groups (`CMakeLists.txt:53-66`). New
-  code must compile cleanly with each.
+- **Build flags that change behavior** — the CMake options `MINIMAL_BUILD`,
+  `LOG_QUIET`, and `RTC_BUILD` gate whole feature groups (`CMakeLists.txt:53-66`).
+  Note the compile-time defines differ from the option names: enabling these
+  emits `-DMINIMAL_BUILD=1`, `-DCONFIG_LOG_QUIET=1` (not `-DLOG_QUIET`), and
+  `-DRTC_BUILD=1` respectively. New code must compile cleanly under each, and
+  in-source guards must use the actual macro names (e.g. `#if CONFIG_LOG_QUIET`).
 - **32-bit is unsupported** — `CMakeLists.txt:30-32` prints a warning; don't rely
   on 32-bit behavior and don't add workarounds for it.
 - **Tabs** — rejected by clang-format and the `Style check` CI stage. Configure
@@ -252,7 +259,7 @@ The last two are used for weekend testing against the `aom-testing` repo.
 | Compile matrix | `.gitlab/workflows/{linux,windows,macos,bsd}` | Multiple toolchains, ccache; in-tree cross toolchains under `cmake/toolchains/` |
 | Unit tests | `test/*.cc` + `SvtAv1UnitTests` | Kernel / transform / SIMD correctness; no external data |
 | API tests | `test/api_test/` + `SvtAv1ApiTests` | Parameter boundary and validation checks |
-| E2E tests | `test/e2e_test/` + `SvtAv1E2ETests` | Needs `SVT_AV1_TEST_VECTOR_PATH`; vector list fetched by `./build.sh ... test` |
+| E2E tests | `test/e2e_test/` + `SvtAv1E2ETests` | `./build.sh release test` builds the binaries but does **not** download test vectors; run the `TestVectors` CMake target separately (`cmake --build <build-dir> --target TestVectors`) or point `SVT_AV1_TEST_VECTOR_PATH` at a local copy |
 | Benchmarking | `test/benchmarking/` (Python) | BD-rate tools, obj-1-fast harness |
 | Nightly / weekend | `.gitlab/workflows/{nightly,standard}` + remote `aom-testing` include | Triggered by schedule, not by every MR |
 
